@@ -1,0 +1,20 @@
+# Dépendances
+node_modules/
+
+# Builds
+dist/
+release/
+build/
+
+# Base de données locale
+*.db
+*.db-journal
+
+# Secrets — ne jamais committer de vraies valeurs
+.env
+.env.local
+.env.production
+
+# Divers
+*.log
+.DS_Store

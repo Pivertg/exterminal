@@ -1,0 +1,145 @@
+<!doctype html>
+<html lang="fr">
+  <head>
+    <meta charset="UTF-8" />
+    <title>Lancement...</title>
+    <style>
+      html, body {
+        margin: 0;
+        height: 100%;
+        background: radial-gradient(circle at center, #1e1e24 0%, #0a0a0d 100%);
+        color: #eee;
+        font-family: sans-serif;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+      }
+      .launcher {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        gap: 18px;
+        width: 360px;
+      }
+      h1 {
+        margin: 0;
+        font-size: 22px;
+        letter-spacing: 2px;
+      }
+      .bar-track {
+        width: 100%;
+        height: 10px;
+        background: #2b2d42;
+        border-radius: 6px;
+        overflow: hidden;
+      }
+      .bar-fill {
+        height: 100%;
+        width: 0%;
+        background: linear-gradient(90deg, #4dd0e1, #b388ff);
+        transition: width 0.3s ease;
+      }
+      .status {
+        font-size: 13px;
+        color: #aaa;
+        min-height: 18px;
+        text-align: center;
+      }
+      .error {
+        color: #ff6b6b;
+      }
+      button {
+        padding: 8px 16px;
+        border-radius: 6px;
+        border: none;
+        cursor: pointer;
+        background: #4dd0e1;
+        color: #111;
+        font-weight: bold;
+        display: none;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="launcher">
+      <h1>VOTRE JEU</h1>
+      <div class="bar-track"><div class="bar-fill" id="bar"></div></div>
+      <p class="status" id="status">Initialisation...</p>
+      <button id="retry-btn">Réessayer</button>
+    </div>
+
+    <script>
+      const bar = document.getElementById("bar");
+      const statusEl = document.getElementById("status");
+      const retryBtn = document.getElementById("retry-btn");
+
+      // Même valeur par défaut que le client (voir /client/src/network/api.ts).
+      // En build de production distribuée, ceci devra pointer vers le serveur public déployé
+      // (voir docs/DEPLOYMENT.md) — actuellement câblé en dur ici pour rester simple, à
+      // externaliser dans un fichier de config si un jour plusieurs environnements coexistent.
+      const SERVER_URL = "https://nanometer-sedation-stand.ngrok-free.dev";
+      const LOCAL_VERSION = "0.1.0"; // doit correspondre à CURRENT_VERSION côté serveur
+
+      let gameChecksDone = false;
+
+      function setProgress(percent, message) {
+        bar.style.width = percent + "%";
+        statusEl.textContent = message;
+        statusEl.classList.remove("error");
+      }
+
+      function showError(message) {
+        statusEl.textContent = message;
+        statusEl.classList.add("error");
+        retryBtn.style.display = "inline-block";
+      }
+
+      // Suit séparément la progression de l'auto-update de l'app (Electron) — voir main.js.
+      // La barre affichée est un mélange des deux étapes pour rester simple visuellement.
+      window.desktopBridge.onUpdateStatus((data) => {
+        if (data.status === "checking") {
+          setProgress(gameChecksDone ? 60 : 10, "Vérification des mises à jour de l'application...");
+        } else if (data.status === "downloading") {
+          setProgress(60 + (data.percent ?? 0) * 0.3, `Téléchargement de la mise à jour${data.percent != null ? " (" + data.percent + "%)" : ""}...`);
+        } else if (data.status === "ready-to-install") {
+          setProgress(100, "Mise à jour prête — redémarrage de l'application...");
+        } else if (data.status === "up-to-date") {
+          if (!gameChecksDone) setProgress(60, "Application à jour.");
+        } else if (data.status === "update-error") {
+          // Non bloquant : on continue avec la version actuelle (voir main.js).
+          console.warn("Erreur de mise à jour (non bloquant) :", data.message);
+        }
+      });
+
+      async function runChecks() {
+        retryBtn.style.display = "none";
+
+        try {
+          setProgress(20, "Connexion au serveur...");
+          const healthRes = await fetch(`${SERVER_URL}/health`);
+          if (!healthRes.ok) throw new Error("Le serveur ne répond pas correctement");
+
+          setProgress(45, "Vérification de la version du jeu...");
+          const versionRes = await fetch(`${SERVER_URL}/api/version`);
+          const versionData = await versionRes.json();
+          if (versionData.version !== LOCAL_VERSION) {
+            setProgress(
+              55,
+              `Nouvelle version du jeu détectée côté serveur (v${versionData.version})`
+            );
+            await new Promise((r) => setTimeout(r, 1000)); // laisse le temps de lire, pas bloquant pour le MVP
+          }
+
+          gameChecksDone = true;
+          setProgress(60, "Vérification des mises à jour de l'application...");
+          window.desktopBridge.launcherReady();
+        } catch (err) {
+          showError("Impossible de joindre le serveur. Vérifiez votre connexion et que le serveur tourne.");
+        }
+      }
+
+      retryBtn.addEventListener("click", runChecks);
+      runChecks();
+    </script>
+  </body>
+</html>

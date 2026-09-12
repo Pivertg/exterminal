@@ -1,0 +1,84 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  // Passé de SQLite à PostgreSQL pour le déploiement (Railway fournit une base Postgres en un
+  // clic). DATABASE_URL vient de la variable d'environnement — définie automatiquement par
+  // Railway une fois le plugin PostgreSQL ajouté, ou dans votre .env en développement local
+  // (voir /server/.env.example).
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id           String   @id @default(cuid())
+  username     String   @unique
+  email        String   @unique
+  passwordHash String
+  createdAt    DateTime @default(now())
+
+  // Progression du compte (Phase 10 — section 15 du GDD).
+  // Personnages/équipements pas encore modélisés : viendront aux Phases 11/13/14.
+  accountLevel         Int @default(1)
+  accountXp            Int @default(0)
+  expeditionsCompleted Int @default(0)
+
+  // Base du joueur (section 6 du GDD) — un seul bâtiment pour le MVP : le QG.
+  // D'autres bâtiments (Forge, Mine, ...) seront ajoutés comme lignes/relations plus tard.
+  hqLevel      Int      @default(1)
+  gold         Int      @default(100)
+
+  // Recrutement / gacha (Phase 13, section 12 du GDD).
+  crystals         Int @default(300) // monnaie de pull, gratuite pour le MVP (pas de paiement réel)
+  pullsSincePity   Int @default(0)   // compteur de pity : garantit un ★★★★+ tous les 10 pulls
+
+  // Équipements (Phase 14, section 13 du GDD) — un seul emplacement par slot pour le MVP.
+  equippedWeaponId   String?
+  equippedArtifactId String?
+
+  // Cosmétiques (Phase 15, section 14 du GDD) — purement visuel, achetés en or.
+  equippedSkinId  String @default("defaut")
+  equippedTitleId String @default("aucun")
+
+  characters PlayerCharacter[]
+  inventory  InventoryItem[]
+  cosmetics  OwnedCosmetic[]
+}
+
+// Personnages possédés par un compte (table séparée, comme prévu dans la revue d'architecture
+// de ChatGPT — docs/journal-05-decisions-claude.md point 4 : "à partir de la Phase 13").
+model PlayerCharacter {
+  id          String   @id @default(cuid())
+  userId      String
+  characterId String   // correspond aux clés de CHARACTER_DEFINITIONS côté client
+  obtainedAt  DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id])
+
+  @@unique([userId, characterId])
+}
+
+// Objets d'équipement possédés (armes/artéfacts, Phase 14).
+model InventoryItem {
+  id         String   @id @default(cuid())
+  userId     String
+  itemId     String   // correspond aux clés de EQUIPMENT_DEFINITIONS côté client
+  obtainedAt DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id])
+
+  @@unique([userId, itemId])
+}
+
+// Cosmétiques achetés (skins et titres, Phase 15).
+model OwnedCosmetic {
+  id         String   @id @default(cuid())
+  userId     String
+  itemId     String   // correspond aux clés de SKIN_DEFINITIONS ou TITLE_DEFINITIONS
+  obtainedAt DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id])
+
+  @@unique([userId, itemId])
+}
